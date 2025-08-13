@@ -1,4 +1,4 @@
-name: Data Pipeline
+name: Convert OSM data to Geoparquet & Upload to R2
 
 on:
   workflow_dispatch:
@@ -72,8 +72,7 @@ jobs:
               ) TO 'monaco.osm.parquet' (
                   FORMAT PARQUET,
                   CODEC 'zstd',
-                  COMPRESSION_LEVEL 20
-                  FORMAT PARQUET,
+                  COMPRESSION_LEVEL 20,
                   PARQUET_VERSION v2
               );
           "
@@ -81,7 +80,7 @@ jobs:
         run: |
           ./duckdb -c "
             LOAD 'spatial';
-            SUMMARIZE FROM 'monaco.osm.parquet'
+            SUMMARIZE FROM 'monaco.osm.parquet';
           "
       #- name: Upload to R2
       #  env:
