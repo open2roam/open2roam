@@ -9,8 +9,12 @@ jobs:
   build-and-upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+        # This is needed to use the ohsome-planet CLI tool
+      - name: Checkout ohsome-planet repository instead of this repository
         uses: actions/checkout@v3
+        with:
+            repository: 'GIScience/ohsome-planet'
+            submodules: true
 
       - name: Set up JDK
         uses: actions/setup-java@v3
@@ -20,11 +24,7 @@ jobs:
           cache: maven
 
       - name: Install ohsome-planet
-        run: |
-          git clone --recurse-submodules https://github.com/GIScience/ohsome-planet.git
-          
-          cd ohsome-planet
-          
+        run: |          
           ./mvnw clean package -DskipTests
 
           java -jar ohsome-planet-cli/target/ohsome-planet.jar
