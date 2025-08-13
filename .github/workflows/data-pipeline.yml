@@ -30,7 +30,15 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
+      - name: Cache ohsome-planet JAR
+        uses: actions/cache@v3
+        id: jar-cache
+        with:
+          path: ohsome-planet-cli/target/ohsome-planet.jar
+          key: ${{ runner.os }}-ohsome-planet-${{ hashFiles('**/pom.xml') }}
+
       - name: Install ohsome-planet
+        if: steps.jar-cache.outputs.cache-hit != 'true'
         run: |          
           ./mvnw clean package -DskipTests
 
