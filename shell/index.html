@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Open2Roam Shell</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@4.18.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@4.18.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background-color: #1e1e1e;
+        }
+        #terminal {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal"></div>
+    <script type="module">
+        import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
+
+        async function main() {
+            const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+            const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+            const worker_url = URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], {type: 'text/javascript'}));
+
+            const worker = new Worker(worker_url);
+            const logger = new duckdb.ConsoleLogger();
+            const db = new duckdb.AsyncDuckDB(logger, worker);
+            await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+            URL.revokeObjectURL(worker_url);
+
+            const term = new Terminal({
+                cursorBlink: true,
+                convertEol: true,
+                theme: {
+                    background: '#1e1e1e',
+                    foreground: '#d4d4d4',
+                }
+            });
+            const fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open(document.getElementById('terminal'));
+            fitAddon.fit();
+            window.addEventListener('resize', () => fitAddon.fit());
+
+            term.writeln('Welcome to the Open2Roam Shell!');
+            term.writeln('Powered by DuckDB-WASM.');
+            term.writeln('Loading data for Monaco and Estonia...');
+
+            const conn = await db.connect();
+
+            try {
+                await conn.query("INSTALL httpfs; LOAD httpfs;");
+                await conn.query(`
+                    CREATE OR REPLACE VIEW monaco AS 
+                    SELECT * FROM 'https://r2.open2roam.org/osm-data/monaco.osm.parquet';
+                `);
+                await conn.query(`
+                    CREATE OR REPLACE VIEW estonia AS
+                    SELECT * FROM 'https://r2.open2roam.org/osm-data/estonia.osm.parquet';
+                `);
+                term.writeln('Data loaded. You can now query the tables "monaco" and "estonia".');
+            } catch (e) {
+                term.writeln(`Error loading data: ${e}`);
+            }
+
+
+            let command = '';
+            term.prompt = () => {
+                term.write('\\r> ');
+            };
+            term.prompt();
+
+            term.onKey(async ({ key, domEvent }) => {
+                if (domEvent.keyCode === 13) { // Enter
+                    if (command) {
+                        term.writeln('');
+                        try {
+                            const result = await conn.query(command);
+                            // poor mans table formatting
+                            const text = result.toArray().map(row => JSON.stringify(row)).join('\\n');
+                            term.writeln(text);
+
+                        } catch (e) {
+                            term.writeln(e.toString());
+                        }
+                        command = '';
+                        term.prompt();
+                    }
+                } else if (domEvent.keyCode === 8) { // Backspace
+                    if (command.length > 0) {
+                        command = command.slice(0, -1);
+                        term.write('\\b \\b');
+                    }
+                } else {
+                    command += key;
+                    term.write(key);
+                }
+            });
+        }
+
+        main();
+    </script>
+</body>
+</html>

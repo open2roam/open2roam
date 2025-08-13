@@ -1,7 +1,7 @@
 # Data collection pipeline
 * uses opentofu to create cloudflare r2 buckets and domain names
 * install ohsome-planet into github action: https://github.com/GIScience/ohsome-planet
-* uses github actions to fetch OSM data for monaco and estonia and converts them to parquet like this:
+* uses github actions to fetch OSM data for monaco and converts them to parquet like this:
 ```sh
 curl -O https://download.geofabrik.de/europe/monaco-latest.osm.pbf
 

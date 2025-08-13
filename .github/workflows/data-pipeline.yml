@@ -1,0 +1,73 @@
+name: Data Pipeline
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 0' # Run weekly on Sunday at 2 AM
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Install ohsome-planet
+        run: |
+          git clone --recurse-submodules https://github.com/GIScience/ohsome-planet.git
+          
+          cd ohsome-planet
+          
+          ./mvnw clean package -DskipTests
+
+          java -jar ohsome-planet-cli/target/ohsome-planet.jar
+
+      - name: Prepare DuckDB dependency
+        run: |
+          wget https://github.com/duckdb/duckdb/releases/download/v1.1.0/duckdb_cli-linux-amd64.zip
+          unzip duckdb_cli-linux-amd64.zip
+          chmod a+x ./duckdb
+
+      - name: Test DuckDB & Ohsome planet
+        run: |
+          ./duckdb :memory: "SELECT 1"
+          java -jar ohsome-planet-cli/target/ohsome-planet.jar --help
+
+      - name: Process Monaco
+        run: |
+          curl -O https://download.geofabrik.de/europe/monaco-latest.osm.pbf
+          java -jar ohsome-planet-cli/target/ohsome-planet.jar contributions --pbf=monaco-latest.osm.pbf --parallel=$(nproc) --output monaco
+          ./duckdb -c "
+              COPY (
+                  SELECT 
+                      osm_type::ENUM ('node', 'way', 'relation') AS osm_type,
+                      osm_id,
+                      tags,
+                      bbox,
+                      ST_GeomFromWKB(geometry) as geometry,
+                  FROM 'monaco/contributions/latest/*.parquet'
+                  ORDER BY bbox.xmin, bbox.ymin, bbox.xmax, bbox.ymax
+              ) TO 'monaco.osm.parquet' (
+                  FORMAT PARQUET,
+                  CODEC 'zstd',
+                  COMPRESSION_LEVEL 20
+              );
+          "
+      - name: Test Monaco data
+        run: |
+          ./duckdb -c "SELECT COUNT(*) FROM 'monaco.osm.parquet' WHERE tags['route'] = 'bus'"
+      #- name: Upload to R2
+      #  env:
+      #    CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      #    CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      #  run: |
+      #    npm install -g wrangler
+      #    wrangler r2 object put "osm-data/monaco.osm.parquet" --file="monaco.osm.parquet"
+      #    wrangler r2 object put "osm-data/estonia.osm.parquet" --file="estonia.osm.parquet"
