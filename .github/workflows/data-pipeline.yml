@@ -13,13 +13,30 @@ jobs:
   build-and-upload:
     runs-on: ubuntu-latest
     steps:
+      - name: Cache ohsome-planet JAR
+        uses: actions/cache@v3
+        id: jar-cache
+        with:
+          path: ohsome-planet-cli/target/ohsome-planet.jar
+          key: ${{ runner.os }}-ohsome-planet-${{ env.OHSOME_PLANET_VERSION }}
+
       # Needed for ohsome-planet CLI tool to convert .osm.pbf -> .parquet
       - name: Checkout ohsome-planet repository instead of this repository
+        if: steps.jar-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v3
         with:
           repository: 'GIScience/ohsome-planet'
           submodules: true
           ref: ${{ env.OHSOME_PLANET_VERSION }}
+      
+      - name: Checkout only pom.xml from ohsome-planet repository if ohsome-planet is already built
+        if: steps.jar-cache.outputs.cache-hit == 'true'
+        uses: actions/checkout@v3
+        with:
+          repository: 'GIScience/ohsome-planet'
+          ref: ${{ env.OHSOME_PLANET_VERSION }}
+          sparse-checkout: |
+            pom.xml
 
       - name: Set up JDK
         uses: actions/setup-java@v3
@@ -27,13 +44,6 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
-
-      - name: Cache ohsome-planet JAR
-        uses: actions/cache@v3
-        id: jar-cache
-        with:
-          path: ohsome-planet-cli/target/ohsome-planet.jar
-          key: ${{ runner.os }}-ohsome-planet-${{ hashFiles('**/pom.xml') }}
 
       - name: Install ohsome-planet
         if: steps.jar-cache.outputs.cache-hit != 'true'
