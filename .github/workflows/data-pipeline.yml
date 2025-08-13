@@ -73,11 +73,16 @@ jobs:
                   FORMAT PARQUET,
                   CODEC 'zstd',
                   COMPRESSION_LEVEL 20
+                  FORMAT PARQUET,
+                  PARQUET_VERSION v2
               );
           "
       - name: Test Monaco data
         run: |
-          ./duckdb -c "SELECT COUNT(*) FROM 'monaco.osm.parquet' WHERE tags['route'] = 'bus'"
+          ./duckdb -c "
+            LOAD 'spatial';
+            SUMMARIZE FROM 'monaco.osm.parquet'
+          "
       #- name: Upload to R2
       #  env:
       #    CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
