@@ -58,7 +58,7 @@ jobs:
       - name: Process Monaco
         run: |
           mkdir data
-          curl -O https://download.geofabrik.de/europe/monaco-latest.osm.pbf
+          curl -L -O https://download.geofabrik.de/europe/monaco-latest.osm.pbf
           java -jar ohsome-planet-cli/target/ohsome-planet.jar contributions \
             --pbf=monaco-latest.osm.pbf --parallel=$(nproc) --output monaco
           ./duckdb -c "
