@@ -66,6 +66,7 @@ jobs:
         run: | 
           ./duckdb -c "
               INSTALL httpfs; LOAD httpfs;
+              INSTALL 'spatial'; LOAD 'spatial';
               COPY (
                   SELECT
                       country as id,
