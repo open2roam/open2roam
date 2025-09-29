@@ -85,7 +85,7 @@ jobs:
                   ORDER BY country
               ) TO 'countries.csv' (HEADER, DELIMITER ';')
           "
-
+      
       - name: Process ${{ matrix.continent }}
         run: |
           mkdir -p data/continent=${{ matrix.continent }}/
@@ -110,8 +110,7 @@ jobs:
                   CODEC 'zstd',
                   COMPRESSION_LEVEL 20,
                   PARQUET_VERSION v2,
-                  PARTITION_BY (country),
-                  PER_THREAD_OUTPUT
+                  PARTITION_BY (country)
               );
           "
       - name: Test ${{ matrix.continent }} data
