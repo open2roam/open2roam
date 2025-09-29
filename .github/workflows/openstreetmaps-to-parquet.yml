@@ -15,107 +15,10 @@ jobs:
     strategy:
       matrix:
         include:
+          # Central America
+          - continent: central-america
           # Europe
-          - continent: europe
-            country: albania
-          - continent: europe
-            country: andorra
-          - continent: europe
-            country: austria
-          - continent: europe
-            country: azores
-          - continent: europe
-            country: belarus
-          - continent: europe
-            country: belgium
-          - continent: europe
-            country: bosnia-herzegovina
-          - continent: europe
-            country: bulgaria
-          - continent: europe
-            country: croatia
-          - continent: europe
-            country: cyprus
-          - continent: europe
-            country: czech-republic
-          - continent: europe
-            country: denmark
-          - continent: europe
-            country: estonia
-          - continent: europe
-            country: faroe-islands
-          - continent: europe
-            country: finland
-          - continent: europe
-            country: france
-          - continent: europe
-            country: georgia
-          - continent: europe
-            country: germany
-          - continent: europe
-            country: greece
-          - continent: europe
-            country: guernsey-jersey
-          - continent: europe
-            country: hungary
-          - continent: europe
-            country: iceland
-          - continent: europe
-            country: ireland-and-northern-ireland
-          - continent: europe
-            country: isle-of-man
-          - continent: europe
-            country: italy
-          - continent: europe
-            country: kosovo
-          - continent: europe
-            country: latvia
-          - continent: europe
-            country: liechtenstein
-          - continent: europe
-            country: lithuania
-          - continent: europe
-            country: luxembourg
-          - continent: europe
-            country: macedonia
-          - continent: europe
-            country: malta
-          - continent: europe
-            country: moldova
-          - continent: europe
-            country: monaco
-          - continent: europe
-            country: montenegro
-          - continent: europe
-            country: netherlands
-          - continent: europe
-            country: norway
-          - continent: europe
-            country: poland
-          - continent: europe
-            country: portugal
-          - continent: europe
-            country: romania
-          - continent: europe
-            country: russia
-          - continent: europe
-            country: serbia
-          - continent: europe
-            country: slovakia
-          - continent: europe
-            country: slovenia
-          - continent: europe
-            country: spain
-          - continent: europe
-            country: sweden
-          - continent: europe
-            country: switzerland
-          - continent: europe
-            country: turkey
-          - continent: europe
-            country: ukraine
-          - continent: europe
-            country: united-kingdom
+          #- continent: europe
     steps:
       # Needed for ohsome-planet CLI tool to convert .osm.pbf -> .parquet
       - name: Checkout ohsome-planet repository instead of this repository
@@ -158,37 +61,53 @@ jobs:
           hf version
           ./duckdb :memory: "SELECT 1"
           java -jar ohsome-planet-cli/target/ohsome-planet.jar --help
+      
+      - name: Download countries.csv from overturemaps
+        run: | 
+          duckdb -c "
+              COPY (
+                  SELECT
+                      country as id,
+                      ST_AsText(geometry) as wkt
+                  FROM read_parquet('s3://overturemaps-us-west-2/release/2025-09-24.0/theme=divisions/type=division_area/*', filename=true, hive_partitioning=1)
+                  WHERE subtype = 'country' AND class = 'land'
+                  ORDER BY country
+              ) TO 'countries.csv' (HEADER, DELIMITER ';')
+          "
 
-      - name: Process ${{ matrix.country }}
+      - name: Process ${{ matrix.continent }}
         run: |
-          mkdir -p data/continent=${{ matrix.continent }}/country=${{ matrix.country }}
-          curl -L -O https://download.geofabrik.de/${{ matrix.continent }}/${{ matrix.country }}-latest.osm.pbf
+          mkdir -p data/continent=${{ matrix.continent }}/
+          curl -L -O https://download.geofabrik.de/${{ matrix.continent }}-latest.osm.pbf
           java -jar ohsome-planet-cli/target/ohsome-planet.jar contributions \
-            --pbf=${{ matrix.country }}-latest.osm.pbf --parallel=$(nproc) --output ${{ matrix.country }}
+            --pbf=${{ matrix.continent }}-latest.osm.pbf --parallel=$(nproc) --output ${{ matrix.continent }}
+            --country-file countries.csv
           ./duckdb -c "
-              INSTALL 'spatial';
-              LOAD 'spatial';
+              INSTALL 'spatial'; LOAD 'spatial';
               COPY (
                   SELECT
                       osm_type::ENUM ('node', 'way', 'relation') AS osm_type,
                       osm_id,
                       tags,
                       bbox,
+                      UNNEST(countries) as country,
                       ST_GeomFromWKB(geometry) as geometry,
-                  FROM '${{ matrix.country }}/contributions/latest/*.parquet'
+                  FROM '${{ matrix.continent }}/contributions/latest/*.parquet'
                   ORDER BY bbox.xmin, bbox.ymin, bbox.xmax, bbox.ymax
-              ) TO 'data/continent=${{ matrix.continent }}/country=${{ matrix.country }}/data.parquet' (
+              ) TO 'data/continent=${{ matrix.continent }}' (
                   FORMAT PARQUET,
                   CODEC 'zstd',
                   COMPRESSION_LEVEL 20,
-                  PARQUET_VERSION v2
+                  PARQUET_VERSION v2,
+                  PARTITION_BY (country),
+                  PER_THREAD_OUTPUT
               );
           "
-      - name: Test ${{ matrix.country }} data
+      - name: Test ${{ matrix.continent }} data
         run: |
           ./duckdb -c "
             LOAD 'spatial';
-            SUMMARIZE FROM 'data/continent=${{ matrix.continent }}/country=${{ matrix.country }}/data.parquet';
+            SUMMARIZE FROM 'data/continent=${{ matrix.continent }}/*/*.parquet';
           "
 
       - name: Upload to Hugging Face
