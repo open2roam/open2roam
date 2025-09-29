@@ -10,7 +10,7 @@ env:
   OHSOME_PLANET_VERSION: '1.1.0'
 
 jobs:
-  build-and-upload:
+  download-convert-and-upload:
     runs-on: ubuntu-latest
     steps:
       # Needed for ohsome-planet CLI tool to convert .osm.pbf -> .parquet
