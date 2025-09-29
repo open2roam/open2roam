@@ -8,6 +8,7 @@ on:
 env:
   DUCKDB_VERSION: '1.3.2'
   OHSOME_PLANET_VERSION: '1.1.0'
+  OVERTURE_MAPS_VERSION: '2025-09-24.0'
 
 jobs:
   download-convert-and-upload:
@@ -62,7 +63,15 @@ jobs:
           ./duckdb :memory: "SELECT 1"
           java -jar ohsome-planet-cli/target/ohsome-planet.jar --help
       
+      - name: Cache countries.csv
+        uses: actions/cache@v3
+        id: country-geometries-cache
+        with:
+          path: countries.csv
+          key: overture-countries-${{ env.OVERTURE_MAPS_VERSION }}
+      
       - name: Download countries.csv from overturemaps
+        if: steps.country-geometries-cache.outputs.cache-hit != 'true'
         run: | 
           ./duckdb -c "
               INSTALL httpfs; LOAD httpfs;
@@ -71,7 +80,7 @@ jobs:
                   SELECT
                       country as id,
                       ST_AsText(geometry) as wkt
-                  FROM read_parquet('s3://overturemaps-us-west-2/release/2025-09-24.0/theme=divisions/type=division_area/*', filename=true, hive_partitioning=1)
+                  FROM read_parquet('s3://overturemaps-us-west-2/release/${{ env.OVERTURE_MAPS_VERSION }}/theme=divisions/type=division_area/*', filename=true, hive_partitioning=1)
                   WHERE subtype = 'country' AND class = 'land'
                   ORDER BY country
               ) TO 'countries.csv' (HEADER, DELIMITER ';')
@@ -82,8 +91,8 @@ jobs:
           mkdir -p data/continent=${{ matrix.continent }}/
           curl -L -O https://download.geofabrik.de/${{ matrix.continent }}-latest.osm.pbf
           java -jar ohsome-planet-cli/target/ohsome-planet.jar contributions \
-            --pbf=${{ matrix.continent }}-latest.osm.pbf --parallel=$(nproc) --output ${{ matrix.continent }}
-            --country-file countries.csv
+            --pbf=${{ matrix.continent }}-latest.osm.pbf --parallel=$(nproc) \
+            --output ${{ matrix.continent }} --country-file countries.csv
           ./duckdb -c "
               INSTALL 'spatial'; LOAD 'spatial';
               COPY (
