@@ -64,7 +64,7 @@ jobs:
       
       - name: Download countries.csv from overturemaps
         run: | 
-          duckdb -c "
+          ./duckdb -c "
               COPY (
                   SELECT
                       country as id,
