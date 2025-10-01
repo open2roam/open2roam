@@ -9,17 +9,12 @@ env:
   DUCKDB_VERSION: '1.3.2'
   OHSOME_PLANET_VERSION: '1.1.0'
   OVERTURE_MAPS_VERSION: '2025-09-24.0'
+  OHSOME_JAR_PATH: ohsome-planet-cli/target/ohsome-planet.jar
 
 jobs:
   download-convert-and-upload:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          # Central America
-          - continent: central-america
-          # Europe
-          #- continent: europe
+
     steps:
       # Needed for ohsome-planet CLI tool to convert .osm.pbf -> .parquet
       - name: Checkout ohsome-planet repository instead of this repository
@@ -40,7 +35,7 @@ jobs:
         uses: actions/cache@v3
         id: jar-cache
         with:
-          path: ohsome-planet-cli/target/ohsome-planet.jar
+          path: ${{ env.OHSOME_JAR_PATH }}
           key: ${{ runner.os }}-ohsome-planet-${{ env.OHSOME_PLANET_VERSION }}
 
       - name: Install ohsome-planet
@@ -53,6 +48,9 @@ jobs:
           wget https://github.com/duckdb/duckdb/releases/download/v${{ env.DUCKDB_VERSION }}/duckdb_cli-linux-amd64.zip
           unzip duckdb_cli-linux-amd64.zip
           chmod a+x ./duckdb
+      
+      - name: install rclone
+        run: curl https://rclone.org/install.sh | sudo bash
       
       - name: Install Hugging Face CLI
         run: pip install huggingface_hub[cli]
@@ -86,38 +84,44 @@ jobs:
               ) TO 'countries.csv' (HEADER, DELIMITER ';')
           "
       
-      - name: Process ${{ matrix.continent }}
+      - name: Process planet
         run: |
-          mkdir -p data/continent=${{ matrix.continent }}/
-          curl -L -O https://download.geofabrik.de/${{ matrix.continent }}-latest.osm.pbf
-          java -jar ohsome-planet-cli/target/ohsome-planet.jar contributions \
-            --pbf=${{ matrix.continent }}-latest.osm.pbf --parallel=$(nproc) \
-            --output ${{ matrix.continent }} --country-file countries.csv
+          rclone copy \
+            --http-url https://download.openplanetdata.com :http:osm/planet/pbf/planet-latest.osm.pbf . \
+            --multi-thread-cutoff 0 --multi-thread-streams 128 --multi-thread-chunk-size 512M \
+            --transfers 1 --progress
+
+          java -jar ${{ env.OHSOME_JAR_PATH }} contributions \
+            --pbf=planet-latest.osm.pbf --parallel=$(nproc) \
+            --output planet --country-file countries.csv
+
           ./duckdb -c "
               INSTALL 'spatial'; LOAD 'spatial';
               COPY (
                   SELECT
                       osm_type::ENUM ('node', 'way', 'relation') AS osm_type,
+                      osm_edits
+                      osm_last_edit,
                       osm_id,
+                      user,
                       tags,
                       bbox,
-                      UNNEST(countries) as country,
-                      ST_GeomFromWKB(geometry) as geometry,
-                  FROM '${{ matrix.continent }}/contributions/latest/*.parquet'
+                      UNNEST(
+                          CASE countries
+                          WHEN [] THEN ['XX'] -- UNKNOWN COUNTRY
+                          ELSE countries
+                          END
+                      ) as country,
+                      ST_GeomFromWKB(geometry) as geometry
+                  FROM 'planet/contributions/latest/*.parquet'
                   ORDER BY bbox.xmin, bbox.ymin, bbox.xmax, bbox.ymax
-              ) TO 'data/continent=${{ matrix.continent }}' (
+              ) TO 'data' (
                   FORMAT PARQUET,
                   CODEC 'zstd',
                   COMPRESSION_LEVEL 20,
                   PARQUET_VERSION v2,
                   PARTITION_BY (country)
               );
-          "
-      - name: Test ${{ matrix.continent }} data
-        run: |
-          ./duckdb -c "
-            LOAD 'spatial';
-            SUMMARIZE FROM 'data/continent=${{ matrix.continent }}/*/*.parquet';
           "
 
       - name: Upload to Hugging Face
