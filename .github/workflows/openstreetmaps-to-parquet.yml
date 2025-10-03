@@ -61,7 +61,7 @@ jobs:
       - name: Test Dependencies
         run: |
           hf version
-          ~/.duckdb/cli/latest/duckdb :memory: "SELECT 1"
+          /root/.duckdb/cli/latest/duckdb :memory: "SELECT 1"
           java -jar ohsome-planet-cli/target/ohsome-planet.jar --help
       
       - name: Cache countries.csv
@@ -92,10 +92,12 @@ jobs:
       - name: Process planet
         run: |
           curl -L -O https://download.geofabrik.de/${{ matrix.continent }}-latest.osm.pbf
+          
           java -jar ohsome-planet-cli/target/ohsome-planet.jar contributions \
             --pbf=${{ matrix.continent }}-latest.osm.pbf --parallel=$(nproc) \
             --output ${{ matrix.continent }} --country-file countries.csv
-          ./duckdb -c "
+
+          /root/.duckdb/cli/latest/duckdb -c "
               INSTALL 'spatial'; LOAD 'spatial';
               COPY (
                   SELECT
